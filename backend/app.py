@@ -1,26 +1,36 @@
-from flask import Flask, request, jsonify, session
-from flask_bcrypt import Bcrypt #pip install Flask-Bcrypt = https://pypi.org/project/Flask-Bcrypt/
-from flask_cors import CORS, cross_origin #ModuleNotFoundError: No module named 'flask_cors' = pip install Flask-Cors
+#app.py
+from flask import Flask, request, jsonify, session, Response, current_app
+from flask_bcrypt import Bcrypt
+from flask_cors import CORS, cross_origin
 from models import db, User, Profession
 
-
 app = Flask(__name__)
- 
+
 app.config['SECRET_KEY'] = 'cairocoders-ednalan'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flaskdb.db'
- 
+
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 SQLALCHEMY_ECHO = True
-  
-bcrypt = Bcrypt(app) 
-CORS(app, supports_credentials=True, methods=["GET", "POST"])
+
+bcrypt = Bcrypt(app)
+CORS(app)
 db.init_app(app)
-  
+
 with app.app_context():
     db.create_all()
 
+# Enable CORS for all routes
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
-
+with app.app_context():  # Add this to ensure the app context is available
+    @current_app.before_request
+    def basic_authentication():
+        if request.method.lower() == 'options':
+            return Response()
 
 
 @app.route("/")
@@ -91,6 +101,24 @@ def add_entity(model, request, fields):
     db.session.commit()
 
     return jsonify({"message": f"{model.__name__} added successfully"})
+
+def handle_delete(model, item_id):
+    item = model.query.get(item_id)
+    if item:
+        item.delete()
+        return jsonify({"message": f"{model.__name__} deleted successfully"})
+    else:
+        return jsonify({"error": f"{model.__name__} not found"}), 404
+
+def handle_modify(model, item_id):
+    item = model.query.get(item_id)
+    if item:
+        new_data = {field: request.json.get(field) for field in model.__table__.columns.keys() if field != 'id'}
+        item.update(new_data)
+        return jsonify({"message": f"{model.__name__} modified successfully"})
+    else:
+        return jsonify({"error": f"{model.__name__} not found"}), 404
+
 ######
 
 
@@ -103,6 +131,18 @@ def get_users():
 @app.route("/add_user", methods=["POST"])
 def add_user():
     return add_entity(User, request, ["email", "password", "role_id"])
+
+
+@app.route("/delete_user/<user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    return handle_delete(User, user_id)
+
+
+
+@app.route("/modify_user/<int:user_id>", methods=["PUT"])
+def modify_user(user_id):
+    return handle_modify(User, user_id)
+
     
 
 # Profession adding/viewing/modifying/deleting
@@ -113,6 +153,14 @@ def get_prof():
 @app.route("/add_prof", methods=["POST"])
 def add_prof():
     return add_entity(Profession, request, ["profession_name", "profession_description"])
+
+@app.route("/delete_prof/<int:prof_id>", methods=["DELETE"])
+def delete_prof(prof_id):
+    return handle_delete(Profession, prof_id)
+
+@app.route("/modify_prof/<int:prof_id>", methods=["PUT"])
+def modify_prof(prof_id):
+    return handle_modify(Profession, prof_id)
 
 if __name__ == "__main__":
     app.run(debug=True)
