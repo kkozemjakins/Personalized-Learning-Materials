@@ -110,10 +110,10 @@ def handle_delete(model, item_id):
     else:
         return jsonify({"error": f"{model.__name__} not found"}), 404
 
-def handle_modify(model, item_id):
+def handle_update(model, item_id):
     item = model.query.get(item_id)
     if item:
-        new_data = {field: request.json.get(field) for field in model.__table__.columns.keys() if field != 'id'}
+        new_data = {field: request.json.get(field) for field in model.__table__.columns.keys() if field != 'id' and field != 'password'}
         item.update(new_data)
         return jsonify({"message": f"{model.__name__} modified successfully"})
     else:
@@ -139,9 +139,9 @@ def delete_user(user_id):
 
 
 
-@app.route("/modify_user/<int:user_id>", methods=["PUT"])
-def modify_user(user_id):
-    return handle_modify(User, user_id)
+@app.route("/update_user/<user_id>", methods=["PUT"])
+def update_user(user_id):
+    return handle_update(User, user_id)
 
     
 
@@ -158,9 +158,9 @@ def add_prof():
 def delete_prof(prof_id):
     return handle_delete(Profession, prof_id)
 
-@app.route("/modify_prof/<int:prof_id>", methods=["PUT"])
-def modify_prof(prof_id):
-    return handle_modify(Profession, prof_id)
+@app.route("/update_prof/<int:prof_id>", methods=["PUT"])
+def update_prof(prof_id):
+    return handle_update(Profession, prof_id)
 
 if __name__ == "__main__":
     app.run(debug=True)
