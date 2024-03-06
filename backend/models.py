@@ -42,13 +42,15 @@ class ProfTest(db.Model, BaseMixin):
     __tablename__ = "profTest"
     id = db.Column(db.String(11), primary_key=True, unique=True, default=get_uuid)
     profession_id = db.Column(db.String(11), db.ForeignKey('professions.id'), unique=True)
-    question_amount = db.Column(db.Integer, default=30 )
+    question_amount = db.Column(db.Integer, default=30)
+
 
 class ProfTestQuestions(db.Model, BaseMixin):
     __tablename__ = "profTestQuestions"
     id = db.Column(db.String(11), primary_key=True, unique=True, default=get_uuid)
     prof_test_id = db.Column(db.String(11), db.ForeignKey('profTest.id'))
-    question = db.Column(db.String(150), unique=True)
+    question = db.Column(db.Text, unique=True)
+    type_of_question = db.Column(db.String(150))
     correct_answer = db.Column(db.String(150))
 
 class ProfTestMarks(db.Model, BaseMixin):
