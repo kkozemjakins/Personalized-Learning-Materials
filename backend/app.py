@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify, session, Response, current_app
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS, cross_origin
 from models import db, User, Profession
+from openai import OpenAI
 
 app = Flask(__name__)
 
@@ -18,6 +19,10 @@ db.init_app(app)
 
 with app.app_context():
     db.create_all()
+    @current_app.before_request
+    def basic_authentication():
+        if request.method.lower() == 'options':
+            return ''
 
 # Enable CORS for all routes
 @app.after_request
@@ -105,10 +110,12 @@ def add_entity(model, request, fields):
 def handle_delete(model, item_id):
     item = model.query.get(item_id)
     if item:
-        item.delete()
+        db.session.delete(item)
+        db.session.commit()
         return jsonify({"message": f"{model.__name__} deleted successfully"})
     else:
         return jsonify({"error": f"{model.__name__} not found"}), 404
+
 
 def handle_update(model, item_id):
     item = model.query.get(item_id)
@@ -120,8 +127,7 @@ def handle_update(model, item_id):
         return jsonify({"error": f"{model.__name__} not found"}), 404
 
 ######
-
-
+    
 
 # User adding/viewing/modifying/deleting
 @app.route("/get_users", methods=["GET"])
@@ -143,22 +149,73 @@ def delete_user(user_id):
 def update_user(user_id):
     return handle_update(User, user_id)
 
-    
+# Profession test and questions 
+
+
+
 
 # Profession adding/viewing/modifying/deleting
 @app.route("/get_prof", methods=["GET"])
 def get_prof():
     return get_entities(Profession, "professions", ["id", "profession_name", "profession_description"])
 
+'''@app.route("/add_prof", methods=["POST"])
+def add_prof():
+    return add_entity(Profession, request, ["profession_name", "profession_description"])'''
+
 @app.route("/add_prof", methods=["POST"])
 def add_prof():
-    return add_entity(Profession, request, ["profession_name", "profession_description"])
+    result = add_entity(Profession, request, ["profession_name", "profession_description"])
 
-@app.route("/delete_prof/<int:prof_id>", methods=["DELETE"])
+    if "message" in result:
+        # Profession added successfully, now create a test using OpenAI
+        profession_name = request.form.get("profession_name")
+        profession_description = request.form.get("profession_description")
+
+        # Customize the OpenAI chat completions creation based on your requirements
+        system_request = f"You will be provided with a profession and its description, and on this basis you will need to create a test that will test knowledge about the profession, with 30 questions of different levels and answers to them. 15 basic level questions, 10 intermediate level questions and 5 advanced level questions"
+        user_request = "Generate test questions with answers for the newly added profession - {profession_name}, profession description - {profession_description}"
+
+        client = OpenAI()
+
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_request},
+                {"role": "user", "content": user_request}
+            ]
+        )
+
+        # Extract test details from OpenAI response
+        test_questions = [message["content"] for message in completion["choices"][0]["message"]["content"]]
+
+        # Save test details in the database
+        new_test = ProfTest(profession_name=profession_name, profession_description=profession_description)
+        db.session.add(new_test)
+        db.session.commit()
+
+        
+        client.close()
+
+        # Save test questions in the ProfTestQuestions table
+        for question in test_questions:
+            new_question = ProfTestQuestions(prof_test_id=new_test.id, question=question, correct_answer="")
+            db.session.add(new_question)
+
+        db.session.commit()
+
+        return jsonify({"message": "Profession added successfully, and a test has been created."})
+
+    return result
+
+
+
+
+@app.route("/delete_prof/<prof_id>", methods=["DELETE"])
 def delete_prof(prof_id):
     return handle_delete(Profession, prof_id)
 
-@app.route("/update_prof/<int:prof_id>", methods=["PUT"])
+@app.route("/update_prof/<prof_id>", methods=["PUT"])
 def update_prof(prof_id):
     return handle_update(Profession, prof_id)
 
