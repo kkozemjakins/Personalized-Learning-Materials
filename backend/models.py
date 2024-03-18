@@ -1,5 +1,6 @@
 #models.py
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from uuid import uuid4
 
 db = SQLAlchemy()
@@ -35,7 +36,7 @@ class Profession(db.Model, BaseMixin):
     __tablename__ = "professions"
     id = db.Column(db.String(11), primary_key=True, unique=True, default=get_uuid)
     profession_name = db.Column(db.String(150), unique=True)
-    profession_description = db.Column(db.String(5000))
+    profession_description = db.Column(db.Text)
 
 
 class ProfTest(db.Model, BaseMixin):
@@ -46,12 +47,16 @@ class ProfTest(db.Model, BaseMixin):
 
 
 class ProfTestQuestions(db.Model, BaseMixin):
-    __tablename__ = "profTestQuestions"
+    __tablename__ = "profTestCreatedQuestions"
     id = db.Column(db.String(11), primary_key=True, unique=True, default=get_uuid)
     prof_test_id = db.Column(db.String(11), db.ForeignKey('profTest.id'))
-    question = db.Column(db.Text, unique=True)
-    type_of_question = db.Column(db.String(150))
+    question = db.Column(db.Text)
+    level_of_question = db.Column(db.String(150))
     correct_answer = db.Column(db.String(150))
+    answer_variant1 = db.Column(db.String(150))
+    answer_variant2 = db.Column(db.String(150))
+    answer_variant3 = db.Column(db.String(150))
+    answer_variant4 = db.Column(db.String(150))
 
 class ProfTestMarks(db.Model, BaseMixin):
     __tablename__ = "profTestMarks"

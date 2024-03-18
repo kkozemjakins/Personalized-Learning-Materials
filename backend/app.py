@@ -1,22 +1,26 @@
 #app.py
 from flask import Flask, request, jsonify, session, Response, current_app
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS, cross_origin
 from models import db, User, Profession, ProfTest, ProfTestQuestions, ProfTestMarks
-from openai import OpenAI
+import openai
 import json
+from bs4 import BeautifulSoup
+import ast
 
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = 'cairocoders-ednalan'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flaskdb.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ECHO'] = True
 
-SQLALCHEMY_TRACK_MODIFICATIONS = False
-SQLALCHEMY_ECHO = True
-
+db.init_app(app)
+migrate = Migrate(app, db)
 bcrypt = Bcrypt(app)
 CORS(app)
-db.init_app(app)
 
 with app.app_context():
     db.create_all()
@@ -174,16 +178,17 @@ def update_test(test_id):
 
 @app.route("/get_test_questions", methods=["GET"])
 def get_tests_questions():
-    return get_entities(ProfTestQuestions, "profTestQuestions", ["id", "prof_test_id", "question", "correct_answer"])
+    return get_entities(ProfTestQuestions, "profTestCreatedQuestions", ["id", "prof_test_id", "level_of_question", "question", "correct_answer", "answer_variant1", "answer_variant2", "answer_variant3", "answer_variant4"])
 
 @app.route("/add_test_questions", methods=["POST"])
 def add_test_questions():
     return add_entity(ProfTestQuestions, request, ["id", "prof_test_id", "question", "correct_answer"])
 
 
-@app.route("/delete_test_questions/<test_id_questions>", methods=["DELETE"])
+@app.route("/delete_test_questions/<test_questions_id>", methods=["DELETE"])
 def delete_test_questions(test_questions_id):
     return handle_delete(ProfTestQuestions, test_questions_id)
+
 
 @app.route("/update_test_questions/<test_id_questions>", methods=["PUT"])
 def update_test_questions(test_questions_id):
@@ -204,56 +209,77 @@ def add_prof():
 @app.route("/add_prof", methods=["POST"])
 def add_prof():
     result = add_entity(Profession, request, ["profession_name", "profession_description"])
- 
+
     # Check if the profession was added successfully
     if "message" in json.loads(result.data):
         # Profession added successfully, now create a test using OpenAI
         profession_name = request.form.get("profession_name")
         profession_description = request.form.get("profession_description")
- 
+        
+        user_request_dict = {
+            "questions": [{
+                "question_number": 1,
+                "question": "What is the main area of expertise for a Full Stack Developer as described in the profession description?",
+                "question_level": "basic",
+                "answers": ["Mobile Development", "JVM related technologies", "Data Analysis"], 
+                "correct_answer": "Cybersecurity"
+            }]
+        }
+
+
         # Customize the OpenAI chat completions creation based on your requirements
-        system_request = "You will be provided with a profession and its description, and on this basis, you will need to create a test that will test knowledge about the profession, with 30 questions of different levels and answers to them(list correct answer in the end with the number of questions). 15 basic level questions, 10 intermediate level questions, and 5 advanced level questions, in total need to be 30 questions. The design should be like this - question number, question, question level in brackets and a list of 4 answer options, to the right of the correct answer there should be a '*' symbol"
-        user_request = f"Generate test questions with answers for the newly added profession - {profession_name}, profession description - {profession_description}"
- 
-        client = OpenAI()
- 
-        completion = client.chat.completions.create(
+        system_request = "You will be provided with a profession and its description, and on this basis, you will need to create a test that will test knowledge level of junior specialist about the profession main skills, with 30 questions of different levels and answers to them. 15 basic level questions, 10 intermediate level questions, and 5 advanced level questions, in total need to be 30 questions related to lastest skills needed in that junior  specialist role."
+        user_request = f"Generate fifteen basic level questions, ten intermediate level questions, and five advanced level questions with answers for the newly added profession - {profession_name}, profession description - {profession_description}. The design should be like this - question number, question, question level in brackets and a list of 4 answer options. And can you output it with JSON array. For each question the question level will have to be written. Also please don't use newline characters and the leading and trailing backticks from the string. Please use this example of output as a template: {json.dumps(user_request_dict)}"
+        client = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_request},
                 {"role": "user", "content": user_request}
             ]
         )
- 
-        # Extract test details from OpenAI response
-        test_questions = []
-        if 'choices' in completion and len(completion['choices']) > 0:
-            first_choice = completion['choices'][0]
-            if 'message' in first_choice and 'content' in first_choice['message']:
-                test_questions = first_choice['message']['content']
- 
-        # Save test details in the database
-        new_test = ProfTest(profession_id=json.loads(result.data)["id"])
 
+        # Extract test details from OpenAI response
+        # Assuming that the response contains a 'choices' field
+        test_content = client['choices'][0]['message']['content']
+
+        # Log the raw question content
+        app.logger.info("Raw question content: " + test_content)
+
+        try:
+            test_questions_data = json.loads(test_content)
+        except json.JSONDecodeError as e:
+            return jsonify({"error": "Failed to parse test content JSON", "details": str(e), "content": test_content}), 500
+
+        profession_id = json.loads(result.data)["id"]
+
+        # Create a new profession test
+        new_test = ProfTest(
+            profession_id=profession_id,
+            question_amount=len(test_questions_data)
+        )
         db.session.add(new_test)
         db.session.commit()
- 
-        client.close()
- 
-        # Save test questions in the ProfTestQuestions table
-        for question in test_questions:
-            new_question = ProfTestQuestions(prof_test_id=new_test.id, question=question, correct_answer="")
-            app.logger.info("question:", question)
- 
+
+        # Add test questions to the database
+        for question_data in test_questions_data["questions"]:
+            new_question = ProfTestQuestions(
+                prof_test_id=new_test.id,
+                question=question_data["question"],
+                level_of_question=question_data["question_level"],
+                correct_answer=question_data["correct_answer"],
+                answer_variant1=question_data["answers"][0],
+                answer_variant2=question_data["answers"][1],
+                answer_variant3=question_data["answers"][2],
+                answer_variant4=question_data["answers"][3]
+            )
             db.session.add(new_question)
- 
-        app.logger.info(completion.choices[0].message.content)
- 
+
+
         db.session.commit()
- 
-        return jsonify({"message": f"Profession added successfully, and a test has been created. {completion.choices[0].message.content}"})
- 
-    return result[0]  # Return the entire response, including errors
+
+        return jsonify({"message": f"Profession added successfully, and a test has been created with questions."+test_content})
+
+    return result  # Return the entire response, including errors
 
 
 @app.route("/delete_prof/<prof_id>", methods=["DELETE"])
