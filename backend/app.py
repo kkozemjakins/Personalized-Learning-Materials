@@ -1,14 +1,16 @@
 #app.py
-from flask import Flask, request, jsonify, session, Response, current_app
+from flask import Flask, request, jsonify, session, Response, current_app, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS, cross_origin
-from models import db, User, Profession, ProfTest, ProfTestQuestions, ProfTestMarks
+from models import db, User, Profession, ProfTest, ProfTestQuestions, ProfTestMarks, ProfTestUserResults
 import openai
 import json
 from bs4 import BeautifulSoup
-import ast
+import os
+import xml.etree.ElementTree as ET
+import glob
 
 app = Flask(__name__)
 
@@ -68,7 +70,13 @@ def signup():
         "id": new_user.id,
         "email": new_user.email
     })
- 
+
+@app.route("/logout", methods=["GET"])
+def logout_user():
+    session.clear()
+    return jsonify({"message": "Logged out successfully"})
+
+
 @app.route("/login", methods=["POST"])
 def login_user():
     email = request.json["email"]
@@ -83,12 +91,16 @@ def login_user():
         return jsonify({"error": "Unauthorized"}), 401
       
     session["user_id"] = user.id
+    session["user_email"] = user.email
+    session["user_role"] = user.role_id
   
     return jsonify({
         "id": user.id,
         "email": user.email,
-        "role_id": user.role_id  # Assuming User model has a role_id field
+        "role_id": user.role_id,
+        # Add more user information here as needed
     })
+
 
 ######
 def get_entities(model, entity_name, fields):
@@ -96,6 +108,15 @@ def get_entities(model, entity_name, fields):
     entity_list = [{field: getattr(entity, field) for field in fields} for entity in entities]
     print(f"{entity_name} data:", entity_list)
     return jsonify({entity_name: entity_list})
+
+def get_entity_by_id(model, entity_name, fields, entity_id):
+    entity = model.query.get(entity_id)
+    if entity:
+        entity_data = {field: getattr(entity, field) for field in fields}
+        print(f"{entity_name} data:", entity_data)
+        return jsonify({entity_name: entity_data})
+    else:
+        return jsonify({"error": f"{entity_name} not found"}), 404
 
 
 def add_entity(model, request, fields):
@@ -136,6 +157,12 @@ def handle_update(model, item_id):
     
 
 # User adding/viewing/modifying/deleting
+
+@app.route("/get_user/<user_id>", methods=["GET"])
+def get_user_by_id(user_id):
+    return get_entity_by_id(User, "profession", ["id", "email", "role_id"], user_id)
+
+
 @app.route("/get_users", methods=["GET"])
 def get_users():
     return get_entities(User, "users", ["id", "email", "role_id"])
@@ -176,6 +203,34 @@ def update_test(test_id):
 
 # Profession questions 
 
+@app.route('/get_test_questions_by_profession/<profession_id>', methods=['GET'])
+def get_test_questions_by_profession(profession_id):
+    try:
+        profession = Profession.query.get(profession_id)
+        if not profession:
+            return jsonify({'error': 'Profession not found'}), 404
+
+        prof_tests = ProfTest.query.filter_by(profession_id=profession_id).all()
+        test_questions = []
+        for prof_test in prof_tests:
+            questions = ProfTestQuestions.query.filter_by(prof_test_id=prof_test.id).all()
+            for question in questions:
+                test_questions.append({
+                    'question_id': question.id,
+                    'question': question.question,
+                    'level_of_question': question.level_of_question,
+                    'correct_answer': question.correct_answer,
+                    'answer_variant1': question.answer_variant1,
+                    'answer_variant2': question.answer_variant2,
+                    'answer_variant3': question.answer_variant3,
+                    'answer_variant4': question.answer_variant4
+                })
+
+        return jsonify(test_questions), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route("/get_test_questions", methods=["GET"])
 def get_tests_questions():
     return get_entities(ProfTestQuestions, "profTestCreatedQuestions", ["id", "prof_test_id", "level_of_question", "question", "correct_answer", "answer_variant1", "answer_variant2", "answer_variant3", "answer_variant4"])
@@ -201,6 +256,10 @@ def update_test_questions(test_questions_id):
 @app.route("/get_prof", methods=["GET"])
 def get_prof():
     return get_entities(Profession, "professions", ["id", "profession_name", "profession_description"])
+
+@app.route("/get_prof/<prof_id>", methods=["GET"])
+def get_prof_by_id(prof_id):
+    return get_entity_by_id(Profession, "profession", ["id", "profession_name", "profession_description"], prof_id)
 
 '''@app.route("/add_prof", methods=["POST"])
 def add_prof():
@@ -229,7 +288,7 @@ def add_prof():
 
         # Customize the OpenAI chat completions creation based on your requirements
         system_request = "You will be provided with a profession and its description, and on this basis, you will need to create a test that will test knowledge level of junior specialist about the profession main skills, with 30 questions of different levels and answers to them. 15 basic level questions, 10 intermediate level questions, and 5 advanced level questions, in total need to be 30 questions related to lastest skills needed in that junior  specialist role."
-        user_request = f"Generate fifteen basic level questions, ten intermediate level questions, and five advanced level questions with answers for the newly added profession - {profession_name}, profession description - {profession_description}. The design should be like this - question number, question, question level in brackets and a list of 4 answer options. And can you output it with JSON array. For each question the question level will have to be written. Also please don't use newline characters and the leading and trailing backticks from the string. Please use this example of output as a template: {json.dumps(user_request_dict)}"
+        user_request = f"Generate 15 basic level questions, 10 intermediate level questions, and 5 advanced level questions with answers for the newly added profession - {profession_name}, profession description - {profession_description}. The design should be like this - question number, question, question level in brackets and a list of 4 answer options. And can you output it with JSON array. For each question the question level will have to be written. Also please don't use newline characters and the leading and trailing backticks from the string. Please use this example of output as a template: {json.dumps(user_request_dict)}"
         client = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -289,6 +348,227 @@ def delete_prof(prof_id):
 @app.route("/update_prof/<prof_id>", methods=["PUT"])
 def update_prof(prof_id):
     return handle_update(Profession, prof_id)
+
+@app.route("/submit_test_results", methods=["POST"])
+def submit_test_results():
+    data = request.json
+    profession_id = data.get("profession_id")
+    user_id = data.get("user_id")
+    mark = data.get("mark")
+    correct_answers_amount = data.get("correct_answers_amount")
+    incorrect_answers_amount = data.get("incorrect_answers_amount")
+
+    # Fetch profession information
+    profession_info = Profession.query.get(profession_id)
+    if not profession_info:
+        return jsonify({"error": "Profession not found"}), 404
+
+    # Fetch profession test information based on profession_id
+    prof_test_info = ProfTest.query.filter_by(profession_id=profession_id).first()
+    if not prof_test_info:
+        return jsonify({"error": "Profession test not found for the given profession"}), 404
+
+    # Extract prof_test_id from the prof_test_info
+    prof_test_id = prof_test_info.id
+
+    profession = profession_info.profession_name
+    profession_description = profession_info.profession_description
+
+    # Fetch user answers for the test
+    user_answers = ProfTestUserResults.query.filter_by(prof_test_id=prof_test_id, user_id=user_id).all()
+    user_answers_data = [{"question_id": ans.questions_id, "user_answer": ans.user_answer, "correct_incorrect": ans.correct_incorrect} for ans in user_answers]
+
+    # Prepare request prompt for OpenAI based on user answers
+    prompt = ""
+    for ans_data in user_answers_data:
+        prompt += f"user answered {ans_data['user_answer']} on question - {ProfTestQuestions.query.get(ans_data['question_id']).question} Level: {ProfTestQuestions.query.get(ans_data['question_id']).level_of_question}, but correct answer was {ProfTestQuestions.query.get(ans_data['question_id']).correct_answer}. "
+
+    system_request = f"You will be provided with answers to the test for the profession {profession} - {profession_description}. Your task is to analyze the user`s answers and provide general comments on test results and based on that result create an outline for a training course for junior specialists, covering all the topics necessary for starting in this profession. Each outline should include a theory section and at least two practical tasks for each topic, along with recommendations and resources for further study, preferably including YouTube links and other recommended materials related to each specific topic. This information should be generated in XML format, based ONLY on the following template." + \
+    """<course_outline>
+      <profession_description>
+        <!-- Replace 'Profession Name' with the actual name of the profession -->
+        <name>Profession Name</name>
+        <!-- Replace 'A brief description of the profession and its significance' with the actual description -->
+        <description>A brief description of the profession and its significance.</description>
+      </profession_description>
+      <topics>
+        <topic>
+          <title>Topic Title 1</title>
+          <theory_section>
+            <description>Description of the theory behind Topic 1.</description>
+            <recommendations>
+              <recommendation>Book/Article name for further reading.</recommendation>
+              <recommendation>YouTube link for related video.</recommendation>
+            </recommendations>
+          </theory_section>
+          <practical_tasks>
+            <task>Description of Practical Task 1 related to Topic 1.</task>
+            <task>Description of Practical Task 2 related to Topic 1.</task>
+          </practical_tasks>
+        </topic>
+        <topic>
+          <title>Topic Title 2</title>
+          <theory_section>
+            <description>Description of the theory behind Topic 2.</description>
+            <recommendations>
+              <recommendation>Book/Article name for further reading.</recommendation>
+              <recommendation>YouTube link for related video.</recommendation>
+            </recommendations>
+          </theory_section>
+          <practical_tasks>
+            <task>Description of Practical Task 1 related to Topic 2.</task>
+            <task>Description of Practical Task 2 related to Topic 2.</task>
+          </practical_tasks>
+        </topic>
+        <!-- Add more topics as needed following the same structure -->
+      </topics>
+      <general_comments>
+        <comment>The user has a strong foundation in Java development and related technologies but may benefit from further experience with containerization tools, cloud development, and additional programming languages.</comment>
+        <improvement_recommendations>It is recommended to explore containerization tools like Docker and Kubernetes, gain experience with cloud platforms such as AWS or Azure, and expand knowledge by learning new programming languages like GoLang and TypeScript.</improvement_recommendations>
+      </general_comments>
+    </course_outline>"""
+
+    
+    client = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": system_request},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    comment_on_results = client['choices'][0]['message']['content']
+    
+    # Save test results to the database
+    new_test_result = ProfTestMarks(
+        prof_test_id=prof_test_id,
+        user_id=user_id,
+        mark=mark,
+        correct_answers_amount=correct_answers_amount,
+        incorrect_answers_amount=incorrect_answers_amount,
+        comment_on_results=comment_on_results
+    )
+    db.session.add(new_test_result)
+    db.session.commit()
+
+    # Create XML content
+    xml_content = create_xml_content(comment_on_results)
+
+    # Save XML content to a file
+    user_id = data.get("user_id")
+    result_id = new_test_result.id
+    filename = f"user_{user_id}_result_{result_id}.xml"
+    file_path = os.path.join(current_app.root_path, "xml_files", filename)
+    with open(file_path, "w") as f:
+        f.write(xml_content)
+
+    return send_file(file_path, as_attachment=True)
+
+def create_xml_content(comment_on_results):
+    # Convert the comment_on_results directly to XML content
+    xml_content = comment_on_results
+    
+    return xml_content
+
+@app.route("/get_user_xml/<user_id>", methods=["GET"])
+def get_user_xml(user_id):
+    try:
+        # Search for XML files based on user ID
+        xml_files = glob.glob(os.path.join(current_app.root_path, "xml_files", f"user_{user_id}_result_*.xml"))
+        if not xml_files:
+            return jsonify({"error": "No XML files found for the specified user ID"}), 404
+        
+        # Read the content of all XML files
+        xml_data = []
+        for file_path in xml_files:
+            with open(file_path, "r") as f:
+                xml_content = f.read()
+                xml_data.append(xml_content)
+
+        return jsonify({"user_xmls": xml_data}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/save_user_answers", methods=["POST"])
+def save_user_answers():
+    data = request.json
+
+    # Save user answers to the database
+    for answer_data in data:
+        question_id = answer_data.get("questions_id")
+        user_answer = answer_data.get("user_answer")
+        
+        # Fetch the correct answer for the question
+        question = ProfTestQuestions.query.get(question_id)
+        correct_answer = question.correct_answer
+        
+        # Determine if the user's answer is correct
+        correct_incorrect = 1 if user_answer == correct_answer else 0
+
+        # Save user answer and correctness to the database
+        new_user_answer = ProfTestUserResults(
+            prof_test_id=answer_data.get("prof_test_id"),
+            user_id=answer_data.get("user_id"),
+            user_marks_id=answer_data.get("user_marks_id"),
+            questions_id=question_id,
+            user_answer=user_answer,
+            correct_incorrect=correct_incorrect
+        )
+        db.session.add(new_user_answer)
+
+    db.session.commit()
+
+    return jsonify({"message": "User answers saved successfully"})
+
+@app.route("/user_answers/<user_id>", methods=["GET"])
+def get_user_answers(user_id):
+    # Query only from ProfTestUserResults table
+    user_answers = ProfTestUserResults.query.filter_by(user_id=user_id).all()
+
+    if user_answers:
+        user_answers_data = []
+        for answer in user_answers:
+            # Fetch additional information from ProfTestMarks, ProfTestQuestions, and Profession
+            question_info = ProfTestQuestions.query.get(answer.questions_id)
+            prof_test_info = ProfTest.query.get(question_info.prof_test_id)
+            mark_info = ProfTestMarks.query.filter_by(user_id=user_id).first()
+            profession_info = Profession.query.get(prof_test_info.profession_id)
+            
+            user_answer_info = {
+                "id": answer.id,
+                "prof_test_id": question_info.prof_test_id,
+                "questions_id": answer.questions_id,
+                "user_answer": answer.user_answer,
+                "correct_incorrect": answer.correct_incorrect,
+                "question_text": question_info.question,
+                "question_level": question_info.level_of_question,
+                "prof_test_results_marks_id": mark_info.id,
+                "comment_on_result": mark_info.comment_on_results,
+                "profession_name": profession_info.profession_name,
+                "profession_description": profession_info.profession_description
+            }
+            user_answers_data.append(user_answer_info)
+
+        return jsonify({"userAnswers": user_answers_data}), 200
+    else:
+        return jsonify({"message": f"No user answers found for the specified user ID {user_id}"}), 404
+
+
+
+
+@app.route("/delete_all_test_results", methods=["DELETE"])
+def delete_all_test_results():
+    try:
+        # Delete all data from ProfTestMarks and ProfTestUserResults tables
+        db.session.query(ProfTestMarks).delete()
+        db.session.query(ProfTestUserResults).delete()
+        db.session.commit()
+        return jsonify({"message": "All test results deleted successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to delete test results: {str(e)}"}), 500
+
+
 
 if __name__ == "__main__":
     app.run(debug=True)
