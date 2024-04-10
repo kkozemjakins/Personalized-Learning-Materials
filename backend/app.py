@@ -531,7 +531,7 @@ def get_user_answers(user_id):
             # Fetch additional information from ProfTestMarks, ProfTestQuestions, and Profession
             question_info = ProfTestQuestions.query.get(answer.questions_id)
             prof_test_info = ProfTest.query.get(question_info.prof_test_id)
-            mark_info = ProfTestMarks.query.filter_by(user_id=user_id).first()
+            mark_info = ProfTestMarks.query.get(prof_test_info.user_marks_ids)
             profession_info = Profession.query.get(prof_test_info.profession_id)
             
             user_answer_info = {
