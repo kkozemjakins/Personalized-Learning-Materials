@@ -1,59 +1,34 @@
 // UserMainPage.jsx
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { useUserRoleAccess } from "../Functions/apiUtils";
+import { useUserRoleAccess,fetchData, } from "../Functions/apiUtils";
+import { getUserInfo } from "../Functions/authUtils";
 
 export default function UserMainPage() {
-    const checkUserRoleAccess = useUserRoleAccess(0);
+
     const [professions, setProfessions] = useState([]);
-    const [tests, setTests] = useState([]);
-    const [userEmail, setUserEmail] = useState("");
-    const [userId, setUserId] = useState("");
-    const [userRole, setUserRole] = useState("");
+    const { userEmail, userId, userRole } = getUserInfo();
+    const checkUserRoleAccess = useUserRoleAccess(0);
 
     useEffect(() => {
-        // Fetch user information from session storage or state
-        const userEmailFromStorage = sessionStorage.getItem("user_email");
-        const userIdFromStorage = sessionStorage.getItem("user_id");
-        const userRoleFromStorage = sessionStorage.getItem("user_role");
-
-        setUserEmail(userEmailFromStorage);
-        setUserId(userIdFromStorage);
-        setUserRole(userRoleFromStorage);
-
         if (!checkUserRoleAccess()) {
             return;
         }
 
-        fetch("http://localhost:5000/get_prof")
-            .then((response) => response.json())
-            .then((data) => {
-                if (data.professions) {
-                    setProfessions(data.professions);
-                }
-            })
-            .catch((error) => console.error("Error fetching professions:", error));
-
-        // Fetch all tests
-        fetch("http://localhost:5000/get_test")
-            .then((response) => response.json())
-            .then((data) => {
-                if (data.profTest) {
-                    setTests(data.profTest);
-                }
-            })
-            .catch((error) => console.error("Error fetching tests:", error));
-    }, []); // Empty dependency array to run the effect only once on component mount
+        fetchData("http://localhost:5000/get_prof", setProfessions, "Professions");
+    }, []); 
 
     return (
         <div>
             <div className="container h-100">
                 <div className="row h-100">
                     <div className="col-12">
-                    <p><Link to="/logout" className="btn btn-success">Logout</Link> 
-                    | <Link to="/user_test_results" className="btn btn-success">Test results</Link> 
-                    | <Link to="/user_courses" className="btn btn-success">Your courses</Link> </p>
-                  
+                        <p>
+                            <Link to="/logout" className="btn btn-success">Logout</Link> 
+                            | <Link to="/user_test_results" className="btn btn-success">Test results</Link> 
+                            | <Link to="/user_courses" className="btn btn-success">Your courses</Link>
+                        </p>
+                      
                         <h1>Welcome to this User</h1>
                         <p>User Email: {userEmail}</p>
                         <p>User ID: {userId}</p>
@@ -70,7 +45,6 @@ export default function UserMainPage() {
                                 </li>
                             ))}
                         </ul>
-
                     </div>
                 </div>
             </div>

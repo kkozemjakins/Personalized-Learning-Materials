@@ -20,12 +20,11 @@ class BaseMixin:
 
 class User(db.Model, BaseMixin):
     __tablename__ = "users"
-    id = db.Column(db.String(11), primary_key=True, unique=True, default=get_uuid)
-    email = db.Column(db.String(150), unique=True)
-    password = db.Column(db.Text, nullable=False)
-    role_id = db.Column(db.Integer, default=0)  # Foreign key relationship
-    # Define relationships with cascade behavior
-    test_results = db.relationship('ProfTestMarks', backref='user', cascade='all, delete')
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(80), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey('role.id'))
+    test_results = db.relationship('ProfTestMarks', backref='user') 
 
 class Profession(db.Model, BaseMixin):
     __tablename__ = "professions"
