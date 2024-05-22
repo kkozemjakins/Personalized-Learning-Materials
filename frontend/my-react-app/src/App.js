@@ -11,6 +11,8 @@ import RegisterPage from './components/pages/RegisterPage.jsx';
 import CoursePage from './components/pages/CoursePages/CoursePage.jsx';
 import TheoryPage from './components/pages/CoursePages/TheoryPage.jsx';
 import TaskPage from './components/pages/CoursePages/TaskPage.jsx';
+import CourseModulesSections from './components/pages/CoursePages/CourseModulesSections.jsx';
+import ModuleSectionTopics from './components/pages/CoursePages/ModuleSectionTopics.jsx';
 
 
 import UserMainPage from './components/pages/User/UserMainPage.jsx';
@@ -65,9 +67,11 @@ function App() {
             <Route path="/logout" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
 
-            <Route path="/course/:id" element={<CoursePage />} />
+            <Route path="/course/:courseId" element={<CoursePage />} />
             <Route path="/task/:id" element={<TaskPage />} />
             <Route path="/theory/:id" element={<TheoryPage />} />
+            <Route path="/course_modules/:courseId" element={<CourseModulesSections />} />
+            <Route path="/course_topics/:courseId/:moduleId/:sectionId" element={<ModuleSectionTopics />} />
 
             <Route path="/user_main" element={<UserMainPage />} />
             <Route path="/profession_test/:id" element={<UserTestPage />} />

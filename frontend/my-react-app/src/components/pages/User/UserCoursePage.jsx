@@ -49,25 +49,29 @@ export default function UserCoursePage() {
 
             <p></p>
             <Space direction="vertical" size={16}>
-                {courses.map((course, index) => (
-                    <Card
-                        key={index}
-                        title={course.profession.profession_name || "Unknown Profession"}
-                        style={{ width: 300 }}
-                        extra={
-                            <Button type="primary" onClick={() => navigate(`/course/${course.id}`)}>
-                                Go To Course
-                            </Button>
-                        }
-                    >
-                        <p>Topics:</p>
-                        <ul>
-                            {course.topics.map((topic, topicIndex) => (
-                                <li key={topicIndex}>{topic.TopicTitle}</li>
-                            ))}
-                        </ul>
-                    </Card>
-                ))}
+                {courses.length > 0 ? (
+                    courses.map((course, index) => (
+                        <Card
+                            key={index}
+                            title={course.profession.profession_name || "Unknown Profession"}
+                            style={{ width: 300 }}
+                            extra={
+                                <Button type="primary" onClick={() => navigate(`/course/${course.id}`)}>
+                                    Go To Course
+                                </Button>
+                            }
+                        >
+                            <p>Modules:</p>
+                            <ul>
+                                {course.modules.map((module, moduleIndex) => (
+                                    <li key={moduleIndex}>{module.ModuleTitle}</li>
+                                ))}
+                            </ul>
+                        </Card>
+                    ))
+                ) : (
+                    <Alert message="No courses found" type="info" showIcon />
+                )}
             </Space>
         </div>
     );

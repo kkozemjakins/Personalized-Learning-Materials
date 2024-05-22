@@ -150,7 +150,7 @@ export default function UserTestPage() {
         {testQuestions.map((question, index) => (
           <div key={index}>
             <p>
-              {index + 1}. {question.question} Level: {question.level_of_question}
+              {index + 1}. {question.question} Level: {question.question_level}
             </p>
             <ul>
               {Object.values(question).slice(0, 4).map((option, optionIndex) => (

@@ -18,7 +18,7 @@ import pyrebase
 
 from GUD import get_entities,get_entity_by_id,add_entity,delete_entity,update_entity
 
-from keys import CLIENT_ID, CLIENT_SECRET, GOOGLE_REDIRECT_URI,FACEBOOK_APP_ID, FACEBOOK_APP_SECRET, FIREBASE_CONFIG
+from keys import CLIENT_ID, CLIENT_SECRET, GOOGLE_REDIRECT_URI,FACEBOOK_APP_ID, FACEBOOK_APP_SECRET, FIREBASE_CONFIG, OPENAI_API_KEY
 
 app = Flask(__name__)
 
@@ -56,36 +56,61 @@ firebase_admin.initialize_app(firebase_cred, name="myapp")
 firestore_db = firestore.client()
 
 
+openai.api_key = OPENAI_API_KEY
+
 def get_openai_response_json(system_request, prompt):
     try:
+        # Debug: Print system request and prompt
+        print("System Request:", system_request)
+        print("Prompt:", prompt)
+
         # Call the OpenAI API
-        client = openai.ChatCompletion.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
+            top_p=0.9,
+            response_format= {"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_request},
                 {"role": "user", "content": prompt}
             ]
         )
-        
+
+        # Debug: Print raw response from OpenAI API
+        print("Raw Response:", response)
+
         # Extract the response content
-        response = client['choices'][0]['message']['content']
+        response_content = response['choices'][0]['message']['content']
         
+        # Debug: Print response content
+        print("Response Content:", response_content)
+
         # Parse the response content as JSON
-        json_content = json.loads(response)
+        json_content = json.loads(response_content)
         
         return json_content
-    
+
+    except openai.error.OpenAIError as e:
+        # Handle specific OpenAI API errors
+        print(f"OpenAI API error occurred: {e}")
+        return None
+    except json.JSONDecodeError as e:
+        # Handle JSON parsing errors
+        print(f"JSON decoding error occurred: {e}")
+        print("Response Content:", response_content)
+        return None
     except Exception as e:
-        print(f"An error occurred: {e}")
+        # Handle any other exceptions
+        print(f"An unexpected error occurred: {e}")
         return None
 
 
-def get_openai_response(system_request, prompt):
+def get_openai_response(system_request, prompt,max_tokens):
     
     try:
         # Call the OpenAI API
         client = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4-turbo",
+            max_tokens=max_tokens,
             messages=[
                 {"role": "system", "content": system_request},
                 {"role": "user", "content": prompt}
@@ -511,66 +536,46 @@ def submit_test_results():
         question = db.collection('TestQuestions').document(ans_data["question_id"]).get().to_dict()
         prompt += f"user answered {ans_data['user_answer']} on question - {question['question']} Level: {question['level_of_question']}, but correct answer was {question['correct_answer']}. "
 
-    system_request = f"You will be provided with answers to the test for the profession {profession_name} - {profession_description}. Your task is to analyze the user`s answers and provide general comments on test results and based on that result create an outline for a training course for junior specialists, covering all the topics necessary for starting in this profession. Each outline should include a theory section and at least two practical tasks for each topic, along with recommendations and resources for further study, preferably including YouTube links and other recommended materials related to each specific topic, maximum there can be 3 topics. This information should be generated in JSON format, based ONLY on the following template." + \
-    """{
+    system_request = f"You will be provided with answers to the test for the profession {profession_name} - {profession_description}. Your task is to analyze the user`s answers and create , based on results, an course outline for a training course for junior specialists, covering all the topics necessary for starting in this profession. Here is example of module progression, please follow it while creating response - Module 1: Introduction to JavaScript, Module 2: Core JavaScript Concepts, Module 3: Intermediate JavaScript, Module 4: Advanced JavaScript, Module 5: Front-End Frameworks and Libraries, Module 6: Back-End JavaScript, Module 7: Testing and Deployment, Module 8: Advanced Topics, Module 9: Project Development.Each outline should include a theory section and at least two practical tasks for each topic, along with recommendations and resources for further study, preferably including YouTube links and other recommended materials related to each specific topic. This information should be generated in JSON format, strictly based ONLY on the following template, use all available tokens to generate response." + \
+    """
+    
+{
   "course_outline": {
-    "profession_description": {
-      "name": "Profession Name",
-      "description": "A brief description of the profession and its significance."
-    },
-    "topics": [
+    "title": "JavaScript Developer from Beginner to Advanced",
+    "modules": [
       {
-        "title": "Topic Title 1",
-        "theory_section": {
-          "description": "Description of the theory behind Topic 1.",
-          "recommendations": {
-            "recommendation": [
-              "Book/Article name for further reading.",
-              "YouTube link for related video."
+        "title": "Introduction to JavaScript",
+        "order": 1,
+        "sections": [
+          {
+            "title": "Basic Syntax",
+            "topics": [
+              {
+                "title": "Variables and Data Types",
+                "theory": "Introduction to variables and data types.",
+                "tasks": [],
+                "recommendations": ["useful links", "videos"]
+              }
             ]
           }
-        },
-        "practical_tasks": {
-          "task": [
-            "Description of Practical Task 1 related to Topic 1.",
-            "Description of Practical Task 2 related to Topic 1."
-          ]
-        }
-      },
-      {
-        "title": "Topic Title 2",
-        "theory_section": {
-          "description": "Description of the theory behind Topic 2.",
-          "recommendations": {
-            "recommendation": [
-              "Book/Article name for further reading.",
-              "YouTube link for related video."
-            ]
-          }
-        },
-        "practical_tasks": {
-          "task": [
-            "Description of Practical Task 1 related to Topic 2.",
-            "Description of Practical Task 2 related to Topic 2."
-          ]
-        }
+        ]
       }
-    ],
-    "general_comments": {
-      "comment": "The user has a strong foundation in Java development and related technologies but may benefit from further experience with containerization tools, cloud development, and additional programming languages.",
-      "improvement_recommendations": "It is recommended to explore containerization tools like Docker and Kubernetes, gain experience with cloud platforms such as AWS or Azure, and expand knowledge by learning new programming languages like GoLang and TypeScript."
-    }
+    ]
   }
 }
+
+
 """
 
     
     response = get_openai_response_json(system_request, prompt)
-    
+        
     if response is None:
         return jsonify({"error": "Failed to generate response from OpenAI"}), 500
 
     json_content = response
+
+    print("JSON:", json_content)
 
     # Save data to the database
     # Save to UserCourses table
@@ -581,78 +586,74 @@ def submit_test_results():
     })
     user_course_id = user_course_ref.id
 
-    system_request = f"You will be provided with topic details and would need to create a two practical tasks, and create tasks that can be done on website in input field. As well as theory, 3 topics,with examples and WORKING! links 2-4 that user can use for learning, and generate it with json template" + \
-    """
-        {
-        "CourseTopicsRecLinks": {
-            "SourceLink":[
-            "Link to source related to Topic.",
-            "Link to youtube related to Topic."
-          ]
-       
-        },
-        "CourseTopicsTheory": {
-            "TheoryContent": "theory_content_here"
-        },
-        "CourseTopicsTasks": {
-            "PracticalTask": [
-            "Description of Practical Task 1 related to Topic.",
-            "Description of Practical Task 2 related to Topic."
-          ]
-        }
-        }
+    modules = json_content['course_outline']['modules']
 
-    """
+    print(f"Number of modules: {len(modules)}")
 
+    for module in modules:
+        module_title = module['title']
+        module_order = module['order']
+        course_module_ref = db.collection('CourseModules').document()
+        course_module_id = course_module_ref.id  # Capture the module ID
 
-    topics = json_content['course_outline']['topics']
-
-# Print the number of topics
-    print(f"Number of topics: {len(topics)}")
-        
-
-    # Save to CourseTopics table
-    for topic in json_content['course_outline']['topics']:
-        topic_title = topic['title']
-        topic_description = topic['theory_section']['description']
-        course_topic_ref = db.collection('CourseTopics').document()
-        course_topic_ref.set({
+        course_module_ref.set({
             "UserCourseID": user_course_id,
-            "TopicTitle": topic_title,
-            "TopicDescription": topic_description
+            "ModuleTitle": module_title,
+            "ModuleOrder": module_order,
         })
 
+        sections = module.get('sections', [])
 
-        prompt = "title of topic: " + topic_title + ", description of topic: " + topic_description
+        for section in sections:
+            section_title = section['title']
+            course_section_ref = db.collection('CourseSections').document()
+            course_section_id = course_section_ref.id  # Capture the section ID
 
-        response_course_details = get_openai_response_json(system_request, prompt)
-        
-        if response_course_details is None:
-            continue  # Skip this topic if there's an issue with generating the details
-        
-        json_content_course_details = response_course_details
-
-        # Save to CourseTopicsTheory
-        theory_ref = db.collection('CourseTopicsTheory').document()
-        theory_ref.set({
-            "CourseTopicID": course_topic_ref.id,
-            "TheoryContent": json_content_course_details['CourseTopicsTheory']['TheoryContent']
-        })
-
-        for link in json_content_course_details['CourseTopicsRecLinks']['SourceLink']:
-            links_ref = db.collection('CourseTopicsRecLinks').document()
-            links_ref.set({
-                "TopicsTheoryID": course_topic_ref.id,
-                "SourceLink": link
+            course_section_ref.set({
+                "ModuleID": course_module_id,
+                "SectionTitle": section_title,
             })
-        
-        # Save to CourseTopicsTasks
-        for task in json_content_course_details['CourseTopicsTasks']['PracticalTask']:
-            tasks_ref = db.collection('CourseTopicsTasks').document()
-            tasks_ref.set({
-                "CourseTopicID": course_topic_ref.id,
-                "PracticalTask": task
-            })
+
+            topics = section.get('topics', [])
+
+            for topic in topics:
+                topic_title = topic['title']
+                theory_content = topic['theory']
+                recommendations = topic.get('recommedations', [])
+                tasks = topic.get('tasks', [])
+
+                course_topic_ref = db.collection('CourseTopics').document()
+                course_topic_id = course_topic_ref.id  # Capture the topic ID
+
+                course_topic_ref.set({
+                    "SectionID": course_section_id,
+                    "TopicTitle": topic_title,
+                })
+
+                theory_ref = db.collection('CourseTopicsTheory').document()
+                topic_theory_id = theory_ref.id  # Capture the theory ID
+
+                theory_ref.set({
+                    "TopicID": course_topic_id,
+                    "TheoryContent": theory_content
+                })
+
+                for rec in recommendations:
+                    links_ref = db.collection('TopicsTheoryRecommendations').document()
+                    links_ref.set({
+                        "TheoryID": topic_theory_id,
+                        "Source": rec
+                    })
+
+                for task in tasks:
+                    tasks_ref = db.collection('TopicsTheoryTasks').document()
+                    tasks_ref.set({
+                        "TheoryID": topic_theory_id,
+                        "PracticalTask": task
+                    })
+
+    print("Data saved successfully.")
+
 
     # Save to ProfTestMarks table
     new_test_result = db.collection('ProfTestMarks').document()
@@ -662,13 +663,73 @@ def submit_test_results():
         "mark": mark,
         "correct_answers_amount": correct_answers_amount,
         "incorrect_answers_amount": incorrect_answers_amount,
-        "general_comments": json_content['course_outline']['general_comments']['comment'],
-        "improvement_recommendations": json_content['course_outline']['general_comments']['improvement_recommendations']
     })
 
     result_id = new_test_result.id  # Get the ID of the newly created test result
 
     return jsonify({"user_marks_id": result_id})  # Return user_marks_id
+
+
+@app.route("/get_course/<course_id>", methods=["GET"])
+def get_course(course_id):
+    course_ref = db.collection('UserCourses').document(course_id)
+    course_data = course_ref.get().to_dict()
+
+    if not course_data:
+        return jsonify({"error": "Course not found"}), 404
+
+    profession_ref = db.collection('professions').document(course_data["professionID"])
+    profession_info = profession_ref.get().to_dict()
+    modules_data = []
+    modules_ref = db.collection('CourseModules').where("UserCourseID", "==", course_id).stream()
+    for module in modules_ref:
+        module_data = module.to_dict()
+        module_id = module.id
+
+        sections_data = []
+        sections_ref = db.collection('CourseSections').where("ModuleID", "==", module_id).stream()
+        for section in sections_ref:
+            section_data = section.to_dict()
+            section_id = section.id
+
+            topics_data = []
+            topics_ref = db.collection('CourseTopics').where("SectionID", "==", section_id).stream()
+            for topic in topics_ref:
+                topic_data = topic.to_dict()
+                topic_id = topic.id
+
+                theory_docs = db.collection('CourseTopicsTheory').where("TopicID", "==", topic_id).stream()
+                theory_data = [doc.to_dict() for doc in theory_docs]
+
+                recommendations_ref = db.collection('TopicsTheoryRecommendations').where("TheoryID", "==", topic_id).stream()
+                recommendations_data = [rec.to_dict() for rec in recommendations_ref]
+
+                tasks_ref = db.collection('TopicsTheoryTasks').where("TheoryID", "==", topic_id).stream()
+                tasks_data = [task.to_dict() for task in tasks_ref]
+
+                topic_data["theory"] = theory_data
+                topic_data["recommendations"] = recommendations_data
+                topic_data["tasks"] = tasks_data
+                topics_data.append(topic_data)
+
+            section_data["topics"] = topics_data
+            sections_data.append(section_data)
+
+        module_data["sections"] = sections_data
+        modules_data.append(module_data)
+
+    test_results_ref = db.collection('ProfTestMarks').where("prof_test_id", "==", course_id).stream()
+    test_results_data = [doc.to_dict() for doc in test_results_ref]
+
+    course_info = {
+        "id": course_id,
+        "profession": profession_info,
+        "modules": sorted(modules_data, key=lambda x: x["ModuleOrder"]),  # Sort modules by order
+        "test_results": test_results_data
+    }
+
+    return jsonify(course_info), 200
+
 
 
 @app.route("/get_user_course/<user_id>", methods=["GET"])
@@ -681,43 +742,120 @@ def get_user_courses(user_id):
         profession = db.collection('professions').document(course_data["professionID"]).get()
         profession_info = profession.to_dict() if profession.exists else {}
 
-        course_topics = db.collection('CourseTopics').where("UserCourseID", "==", user_course.id).stream()
-        topics_data = []
+        modules_data = []
+        modules = db.collection('CourseModules').where("UserCourseID", "==", user_course.id).stream()
+        for module in modules:
+            module_data = module.to_dict()
+            module_id = module.id
 
-        for topic in course_topics:
-            topic_data = topic.to_dict()
-            topic_theory_docs = db.collection('CourseTopicsTheory').where("CourseTopicID", "==", topic.id).stream()
-            theory_data = {}
-            for doc in topic_theory_docs:
-                theory_data = doc.to_dict()  # Assuming there's only one theory document per topic
+            sections_data = []
+            sections = db.collection('CourseSections').where("ModuleID", "==", module_id).stream()
+            for section in sections:
+                section_data = section.to_dict()
+                section_id = section.id
 
-            topic_links = db.collection('CourseTopicsRecLinks').where("TopicsTheoryID", "==", topic.id).stream()
-            links_data = [link.to_dict() for link in topic_links]
+                topics_data = []
+                topics = db.collection('CourseTopics').where("SectionID", "==", section_id).stream()
+                for topic in topics:
+                    topic_data = topic.to_dict()
+                    topic_id = topic.id
 
-            topic_tasks = db.collection('CourseTopicsTasks').where("CourseTopicID", "==", topic.id).stream()
-            tasks_data = [task.to_dict() for task in topic_tasks]
+                    theory_docs = db.collection('CourseTopicsTheory').where("TopicID", "==", topic_id).stream()
+                    theory_data = [doc.to_dict() for doc in theory_docs]
 
-            topic_data["theory"] = theory_data
-            topic_data["links"] = links_data
-            topic_data["tasks"] = tasks_data
+                    recommendations = db.collection('TopicsTheoryRecommendations').where("TheoryID", "==", topic_id).stream()
+                    recommendations_data = [rec.to_dict() for rec in recommendations]
 
-            topics_data.append(topic_data)
+                    tasks = db.collection('TopicsTheoryTasks').where("TheoryID", "==", topic_id).stream()
+                    tasks_data = [task.to_dict() for task in tasks]
+
+                    topic_data["theory"] = theory_data
+                    topic_data["recommendations"] = recommendations_data
+                    topic_data["tasks"] = tasks_data
+                    topics_data.append(topic_data)
+
+                section_data["topics"] = topics_data
+                sections_data.append(section_data)
+
+            module_data["sections"] = sections_data
+            modules_data.append(module_data)
 
         test_results_docs = db.collection('ProfTestMarks').where("prof_test_id", "==", user_course.id).where("user_id", "==", user_id).stream()
-        test_results_data = {}
-        for doc in test_results_docs:
-            test_results_data = doc.to_dict()  # Assuming there's only one test result document per user and profession
+        test_results_data = [doc.to_dict() for doc in test_results_docs]
 
         course_info = {
-            "id": user_course.id,  # Include course ID
+            "id": user_course.id,
             "profession": profession_info,
-            "topics": topics_data,
+            "modules": sorted(modules_data, key=lambda x: x["ModuleOrder"]),  # Sort modules by order
             "test_results": test_results_data
         }
 
         courses_data.append(course_info)
 
     return jsonify(courses_data), 200
+
+
+
+@app.route("/get_course_modules/<course_id>", methods=["GET"])
+def get_course_modules(course_id):
+    course_modules = db.collection('CourseModules').where("UserCourseID", "==", course_id).stream()
+    modules_data = []
+
+    for module in course_modules:
+        module_data = module.to_dict()
+        module_id = module.id
+
+        sections_data = []
+        sections = db.collection('CourseSections').where("ModuleID", "==", module_id).stream()
+        for section in sections:
+            section_data = section.to_dict()
+            section_id = section.id
+            sections_data.append({"id": section_id, "title": section_data["SectionTitle"]})
+
+        module_info = {"id": module_id, "title": module_data["ModuleTitle"], "sections": sections_data}
+        modules_data.append(module_info)
+
+    return jsonify(modules_data), 200
+
+@app.route("/get_section_topics/<course_id>/<module_id>/<section_id>", methods=["GET"])
+def get_section_topics(course_id, module_id, section_id):
+    topics = db.collection('CourseTopics').where("SectionID", "==", section_id).stream()
+    topics_data = []
+
+    for topic in topics:
+        topic_data = topic.to_dict()
+        topic_id = topic.id
+
+        theory_docs = db.collection('CourseTopicsTheory').where("TopicID", "==", topic_id).stream()
+        
+        theory_data = []
+        theory_ids = []
+        
+        # Collect theory data and IDs
+        for theory_doc in theory_docs:
+            theory_dict = theory_doc.to_dict()
+            theory_dict['id'] = theory_doc.id
+            theory_data.append(theory_dict)
+            theory_ids.append(theory_doc.id)
+
+        tasks_data = []
+
+        # Fetch tasks for each theory document
+        for theory_id in theory_ids:
+            tasks = db.collection('TopicsTheoryTasks').where("TheoryID", "==", theory_id).stream()
+            tasks_data.extend([task.to_dict() for task in tasks])
+
+        topic_info = {
+            "id": topic_id,
+            "TopicTitle": topic_data["TopicTitle"],
+            "theory": theory_data,
+            "tasks": tasks_data
+        }
+        topics_data.append(topic_info)
+
+    return jsonify({"topics": topics_data}), 200
+
+
 
 
 
@@ -802,43 +940,7 @@ def delete_all_test_results():
 
 #Courses
 # Courses
-@app.route("/get_course/<course_id>", methods=["GET"])
-def get_course(course_id):
-    try:
-        # Fetch course data from your database based on the provided course_id
-        course_ref = db.collection('UserCourses').document(course_id)
-        course_doc = course_ref.get()
-        
-        if not course_doc.exists:
-            return jsonify({"error": "Course not found"}), 404
-        
-        course_data = course_doc.to_dict()
-        
-        # Fetch additional data related to the course (e.g., profession, topics, test results)
-        profession_id = course_data.get("professionID")
-        profession_doc = db.collection('professions').document(profession_id).get()
-        profession_info = profession_doc.to_dict() if profession_doc.exists else {}
-        
-        # Fetch topics related to the course
-        course_topics = db.collection('CourseTopics').where("UserCourseID", "==", course_id).stream()
-        topics_data = []
-        for topic in course_topics:
-            topic_data = topic.to_dict()
-            topic_data["id"] = topic.id  # Include topic ID
-            topics_data.append(topic_data)
-        
 
-        # Construct the course information object
-        course_info = {
-            "id": course_id,
-            "profession": profession_info,
-            "topics": topics_data
-        }
-        
-        return jsonify(course_info), 200
-    
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 @app.route("/get_theory/<theory_id>", methods=["GET"])
 def get_theory(theory_id):
