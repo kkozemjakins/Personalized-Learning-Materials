@@ -1,76 +1,3 @@
-// CoursePage.jsx
-/*import React, { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
-import { Card, Space, Spin, Alert, Button } from 'antd';
-
-export default function CoursePage() {
-    const { id } = useParams();
-    const [course, setCourse] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-
-    useEffect(() => {
-        async function fetchCourse() {
-            try {
-                const response = await fetch(`http://localhost:5000/get_course/${id}`);
-                if (!response.ok) {
-                    throw new Error(`Error: ${response.status} ${response.statusText}`);
-                }
-                const data = await response.json();
-                setCourse(data);
-                setLoading(false);
-            } catch (error) {
-                console.error("Error fetching course:", error);
-                setError(error.message);
-                setLoading(false);
-            }
-        }
-
-        fetchCourse();
-    }, [id]);
-
-    if (loading) {
-        return <Spin tip="Loading..." />;
-    }
-
-    if (error) {
-        return <Alert message="Error" description={error} type="error" showIcon />;
-    }
-
-    return (
-        <div>
-            <h1>Course Page</h1>
-            <Link to="/user_main" className="btn btn-primary">
-                Back to Main Page
-            </Link>
-
-            {course && (
-                <Space direction="vertical">
-                    <Card title={course.profession.profession_name || "Unknown Profession"}>
-                        <p>Profession Description:</p>
-                        <p>{course.profession.profession_description}</p>
-                        <p>Topics:</p>
-                        <ul>
-                            {course.topics.map((topic, topicIndex) => (
-                                <li key={topicIndex}>
-                                    <strong>{topic.TopicTitle} </strong>
-
-                                        <Link to={`/theory/${topic.id}`}>
-                                            <Button type="primary">Go to Theory</Button>
-                                        </Link>
-
-                                </li>
-                            ))}
-                        </ul>
-                    </Card>
-                </Space>
-            )}
-
-        </div>
-    );
-}
-*/
-// CoursePage.jsx
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { Layout, Card, Row, Col, Typography, Image, Collapse, Spin, Button } from 'antd';
@@ -93,7 +20,7 @@ const CoursePage = () => {
         const fetchCourseData = async () => {
             try {
                 const response = await axios.get(`http://localhost:5000/get_course/${courseId}`);
-                setCourse(response.data);  
+                setCourse(response.data);
                 setLoading(false);
             } catch (error) {
                 console.error('Error fetching course data:', error);
@@ -114,6 +41,21 @@ const CoursePage = () => {
 
     const { profession, modules } = course;
 
+    const renderDescription = (description) => {
+        if (!description || typeof description !== 'object') return null;
+
+        return Object.entries(description).map(([key, value]) => (
+            <div key={key}>
+                <Typography.Title level={4}>{key.replace(/_/g, " ")}</Typography.Title>
+                {typeof value === 'object' && value !== null ? (
+                    renderDescription(value)
+                ) : (
+                    <Typography.Paragraph>{value}</Typography.Paragraph>
+                )}
+            </div>
+        ));
+    };
+
     return (
         <Content style={{ padding: '24px' }}>
             <Card title={profession.profession_name}>
@@ -123,7 +65,7 @@ const CoursePage = () => {
                     </Col>
                     <Col span={16}>
                         <Text strong>{profession.profession_name}</Text>
-                        <Text type="secondary"><br />{profession.profession_description}</Text>
+                        <Text type="secondary"><br />{renderDescription(profession.profession_description)}</Text>
                         <br />
                         <Text type="secondary">
                             <StarOutlined /> - (- ratings)

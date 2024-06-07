@@ -13,6 +13,7 @@ import TheoryPage from './components/pages/CoursePages/TheoryPage.jsx';
 import TaskPage from './components/pages/CoursePages/TaskPage.jsx';
 import CourseModulesSections from './components/pages/CoursePages/CourseModulesSections.jsx';
 import ModuleSectionTopics from './components/pages/CoursePages/ModuleSectionTopics.jsx';
+import TopicTheoryTask from './components/pages/CoursePages/TopicTheoryTask.jsx';
 
 
 import UserMainPage from './components/pages/User/UserMainPage.jsx';
@@ -68,6 +69,7 @@ function App() {
             <Route path="/register" element={<RegisterPage />} />
 
             <Route path="/course/:courseId" element={<CoursePage />} />
+            <Route path="/topic/:topicId" element={<TopicTheoryTask />} />
             <Route path="/task/:id" element={<TaskPage />} />
             <Route path="/theory/:id" element={<TheoryPage />} />
             <Route path="/course_modules/:courseId" element={<CourseModulesSections />} />

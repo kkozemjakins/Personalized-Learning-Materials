@@ -1,7 +1,7 @@
 // ModuleSectionTopics.jsx
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { Card, Collapse } from 'antd';
+import { useParams, Link } from 'react-router-dom';
+import { Card, Collapse, Button } from 'antd';
 import axios from 'axios';
 
 const { Panel } = Collapse;
@@ -45,6 +45,9 @@ const ModuleSectionTopics = () => {
               {topic.tasks.map((task, idx) => (
                 <p key={idx}>{task.PracticalTask}</p>
               ))}
+              <Link to={`/topic/${topic.id}`}>
+                <Button type="primary">View Details</Button>
+              </Link>
             </Card>
           </Panel>
         ))}

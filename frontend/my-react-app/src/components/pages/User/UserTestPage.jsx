@@ -1,9 +1,10 @@
-//UserTestPage.jsx
 import React, { useState, useEffect } from "react";
 import { useParams, useLocation } from "react-router";
 import { useUserRoleAccess } from "../Functions/apiUtils";
-
 import { getSessionCookie } from "../Functions/authUtils";
+import { Form, Button, Radio, List, Typography, Alert, Spin } from 'antd';
+
+const { Title, Paragraph } = Typography;
 
 export default function UserTestPage() {
   const { id } = useParams();
@@ -20,8 +21,6 @@ export default function UserTestPage() {
   const userData = location.state || {};
   const { email, id: userIdFromLocation, role } = userData;
   const checkUserRoleAccess = useUserRoleAccess(0);
-
-
 
   useEffect(() => {
     const userIdFromStorage = getSessionCookie("user_id");
@@ -51,7 +50,6 @@ export default function UserTestPage() {
       setLoading(false);
     }
   }, [id]);
-  
 
   const handleAnswerChange = (questionIndex, selectedAnswer) => {
     setAnswers({
@@ -60,8 +58,7 @@ export default function UserTestPage() {
     });
   };
 
-  const handleSubmit = (event) => {
-    event.preventDefault();
+  const handleSubmit = () => {
     let correctAnswers = 0;
   
     testQuestions.forEach((question, index) => {
@@ -123,79 +120,93 @@ export default function UserTestPage() {
         console.error("Error submitting test results:", error);
       });
   };
-  
 
   if (loading) {
-    return <div>Loading...</div>;
+    return <Spin tip="Loading..." />;
   }
 
   if (error) {
-    return <div>{error}</div>;
+    return <Alert message={error} type="error" />;
   }
 
   return (
-    <div>
+    <div style={{ padding: '20px' }}>
+      <Title level={2}>User Test Page</Title>
       <p>User ID: {userId}</p>
       {profession && (
         <div>
-          <h2>Profession Details</h2>
-          <p>Profession ID: {profession.id}</p>
-          <p>Profession Name: {profession.profession_name}</p>
-          <p>Description: {profession.profession_description}</p>
+          <Title level={3}>Profession Details</Title>
+          <Paragraph>
+            <strong>Profession ID:</strong> {profession.id}
+          </Paragraph>
+          <Paragraph>
+            <strong>Profession Name:</strong> {profession.profession_name}
+          </Paragraph>
+          <Paragraph>
+            <strong>Description:</strong> {profession.profession_description}
+          </Paragraph>
         </div>
       )}
 
-      <h2>Test Questions</h2>
-      <form onSubmit={handleSubmit}>
-        {testQuestions.map((question, index) => (
-          <div key={index}>
-            <p>
-              {index + 1}. {question.question} Level: {question.question_level}
-            </p>
-            <ul>
-              {Object.values(question).slice(0, 4).map((option, optionIndex) => (
-                <li key={optionIndex}>
-                  <label
-                    style={{
-                      color:
-                        submitted && option === question.correct_answer
-                          ? "green"
-                          : submitted && answers[index] !== option
-                          ? "red"
-                          : "inherit",
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name={`question${index}`}
-                      value={option}
-                      checked={answers[index] === option}
-                      onChange={() => handleAnswerChange(index, option)}
-                      disabled={submitted}
-                    />
-                    {option}
-                  </label>
-                  {submitted && answers[index] !== option && option === question.correct_answer && (
-                    <span style={{ color: "green" }}> ✓</span>
-                  )}
-                  {submitted && answers[index] === option && option !== question.correct_answer && (
-                    <span style={{ color: "red" }}> x</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-        <button type="submit" disabled={submitted}>
-          Submit
-        </button>
-      </form>
+      <Title level={3}>Test Questions</Title>
+      <Form onFinish={handleSubmit}>
+        <List
+          itemLayout="vertical"
+          dataSource={testQuestions}
+          renderItem={(question, index) => (
+            <List.Item key={index}>
+              <Title level={4}>
+                {index + 1}. {question.question} (Level: {question.question_level})
+              </Title>
+              <Form.Item name={`question${index}`}>
+                <Radio.Group
+                  onChange={(e) => handleAnswerChange(index, e.target.value)}
+                  value={answers[index]}
+                  disabled={submitted}
+                >
+                  {Object.values(question).slice(0, 4).map((option, optionIndex) => (
+                    <Radio key={optionIndex} value={option}>
+                      <span
+                        style={{
+                          color:
+                            submitted && option === question.correct_answer
+                              ? "green"
+                              : submitted && answers[index] !== option
+                              ? "red"
+                              : "inherit",
+                        }}
+                      >
+                        {option}
+                      </span>
+                      {submitted && answers[index] !== option && option === question.correct_answer && (
+                        <span style={{ color: "green" }}> ✓</span>
+                      )}
+                      {submitted && answers[index] === option && option !== question.correct_answer && (
+                        <span style={{ color: "red" }}> x</span>
+                      )}
+                    </Radio>
+                  ))}
+                </Radio.Group>
+              </Form.Item>
+            </List.Item>
+          )}
+        />
+        <Form.Item>
+          <Button type="primary" htmlType="submit" disabled={submitted}>
+            Submit
+          </Button>
+        </Form.Item>
+      </Form>
 
       {mark !== null && (
         <div>
-          <h2>Test Result</h2>
-          <p>Mark: {mark}%</p>
-          <p>Correct Answers: {correctAnswersCount}/{testQuestions.length}</p>
+          <Title level={3}>Test Result</Title>
+          <Paragraph>
+            <strong>Mark:</strong> {mark}%
+          </Paragraph>
+          <Paragraph>
+            <strong>Correct Answers:</strong> {correctAnswersCount}/{testQuestions.length}
+          </Paragraph>
         </div>
       )}
     </div>
