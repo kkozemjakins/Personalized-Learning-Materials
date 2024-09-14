@@ -20,6 +20,13 @@ from GUD import get_entities,get_entity_by_id,add_entity,delete_entity,update_en
 
 from keys import CLIENT_ID, CLIENT_SECRET, GOOGLE_REDIRECT_URI,FACEBOOK_APP_ID, FACEBOOK_APP_SECRET, FIREBASE_CONFIG, OPENAI_API_KEY
 
+
+import firebase_admin
+from firebase_admin import auth
+
+# Initialize the Firebase app
+firebase_admin.initialize_app()
+
 app = Flask(__name__)
 
 # Initialize Firestore
@@ -54,6 +61,26 @@ client = WebApplicationClient(GOOGLE_CLIENT_ID)
 firebase_cred = credentials.Certificate("secret/eduaisystem-firebase-adminsdk-f8s0n-187930ae20.json")
 firebase_admin.initialize_app(firebase_cred, name="myapp")
 firestore_db = firestore.client()
+
+def get_user_by_email(email):
+    try:
+        user = auth.get_user_by_email(email)
+        return user
+    except firebase_admin.auth.UserNotFoundError:
+        return None
+
+def create_user(email, email_verified, password, display_name, photo_url):
+    user = auth.create_user(
+        email=email,
+        email_verified=email_verified,
+        password=password,
+        display_name=display_name,
+        photo_url=photo_url
+    )
+    return user
+
+def create_custom_token(uid):
+    return auth.create_custom_token(uid)
 
 
 openai.api_key = OPENAI_API_KEY
@@ -133,21 +160,25 @@ def get_openai_response(system_request, prompt):
         print(f"An error occurred: {e}")
         return None
 
+client = WebApplicationClient(GOOGLE_CLIENT_ID)
+
 def get_google_provider_cfg():
     return requests.get(GOOGLE_DISCOVERY_URL).json()
 
 
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 @app.route("/google/signup")
 def google_signup():
     google_provider_cfg = get_google_provider_cfg()
     authorization_endpoint = google_provider_cfg["authorization_endpoint"]
+    
+    # Use ngrok URL for redirect_uri
     request_uri = client.prepare_request_uri(
         authorization_endpoint,
-        redirect_uri=request.base_url + "/callback",
+        redirect_uri=GOOGLE_REDIRECT_URI,  # Replace <ngrok-id> with your ngrok ID
         scope=["openid", "email", "profile"],
     )
     return redirect(request_uri)
-
 
 @app.route("/google/signup/callback")
 def google_signup_callback():
@@ -157,7 +188,7 @@ def google_signup_callback():
     token_url, headers, body = client.prepare_token_request(
         token_endpoint,
         authorization_response=request.url,
-        redirect_url=request.base_url,
+        redirect_url=GOOGLE_REDIRECT_URI,  # Replace <ngrok-id> with your ngrok ID
         code=code
     )
     token_response = requests.post(
@@ -173,11 +204,11 @@ def google_signup_callback():
     userinfo_data = userinfo_response.json()
 
     # Create or get user
-    user = authPY.get_user_by_email(userinfo_data["email"])
+    user = auth.get_user_by_email(userinfo_data["email"])
 
     if not user:
         # Create user
-        user = authPY.create_user(
+        user = auth.create_user(
             email=userinfo_data["email"],
             email_verified=userinfo_data["email_verified"],
             password="default_password",
@@ -186,9 +217,11 @@ def google_signup_callback():
         )
 
     # Create custom token
-    custom_token = authPY.create_custom_token(user.uid)
+    custom_token = auth.create_custom_token(user.uid)
 
     return jsonify({"token": custom_token.decode()})
+
+
 # Facebook sign up
 FACEBOOK_APP_ID = FACEBOOK_APP_ID
 FACEBOOK_APP_SECRET = FACEBOOK_APP_SECRET
@@ -234,9 +267,9 @@ def signup_user():
         
         add_entity(db.collection('users'), user_data)
 
-        return jsonify({"message": "User created successfully"}), 201
+        return jsonify({"message": "User created successfully"}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"errorAA": str(e)}), 500
 
 
 
@@ -1173,6 +1206,94 @@ def get_topic_details(topic_id):
     else:
         return jsonify({"message": "Topic not found"}), 404
 
+@app.route("/create_detailed_theory/<theory_id>", methods=["GET"])
+def create_detailed_theory(theory_id):
+
+    # Fetch the theory data
+    theory_doc = db.collection('CourseTopics').document(theory_id).get()
+    if not theory_doc.exists:
+        return jsonify({"message": "Theory not found"}), 404
+
+    theory_data = theory_doc.to_dict()
+    theory_title = theory_data.get("TopicTitle")
+
+    theory_content_doc = db.collection('CourseTopicsTheory').where("TopicID", "==", theory_id).limit(1)
+
+
+    theory_content_data = theory_doc.to_dict()
+    theory_content = theory_content_data.get("TheoryContent")
+
+    # Get SectionID from the theory data
+    section_id = theory_data.get("SectionID")
+
+    # Get ModuleID from the section data
+    section_doc = db.collection('CourseSections').document(section_id).get()
+    if not section_doc.exists:
+        return jsonify({"message": "Section not found"}), 404
+
+    section_data = section_doc.to_dict()
+    module_id = section_data.get("ModuleID")
+
+    # Get UserCourseID from the module data
+    module_doc = db.collection('CourseModules').document(module_id).get()
+    if not module_doc.exists:
+        return jsonify({"message": "Module not found"}), 404
+
+    module_data = module_doc.to_dict()
+    user_course_id = module_data.get("UserCourseID")
+
+    # Get ProfessionID from the user course data
+    user_course_doc = db.collection('UserCourses').document(user_course_id).get()
+    if not user_course_doc.exists:
+        return jsonify({"message": "User course not found"}), 404
+
+    user_course_data = user_course_doc.to_dict()
+    profession_id = user_course_data.get("professionID")
+
+    # Search for similar theory titles within the same profession
+    similar_theories = db.collection('CourseTopics').where("SectionID", "==", section_id).stream()
+    for similar_theory in similar_theories:
+        similar_theory_data = similar_theory.to_dict()
+        if similar_theory.id != theory_id and similar_theory_data.get("title") == theory_title:
+            # Check if detailed content already exists
+            detailed_theory_docs = db.collection('TheoryDetail').where("theoryID", "==", similar_theory.id).stream()
+            for detailed_theory in detailed_theory_docs:
+                detailed_theory_data = detailed_theory.to_dict()
+                return jsonify(detailed_theory_data), 200
+
+    # Generate detailed content using OpenAI
+    system_request = "Create detailed theory content for a topic"
+    prompt = f"Generate a detailed content for the theory with the title: {theory_title} and content: {theory_content}, there can be more than one links to useful materials, strictly using this json template:" + \
+        """
+    
+{
+  "theory_content": {
+    "main_content": "Course content that will fully cover topic",
+    "useful_video": {
+        "title": "title of content that link could provide",
+        "link": "link to useful YouTube video which will help understand topic better"
+    },
+    "useful_links": {
+        "title": "title of content that link could provide",
+        "link": "link to useful material which will help understand topic better"
+    }
+  }
+}
+"""
+
+    detailed_content = get_openai_response_json(system_request, prompt)
+
+    # Save the generated detailed content to TheoryDetail table
+    detailed_theory_doc = db.collection('TheoryDetail').document()
+    detailed_theory_doc.set({
+        "topic_title":theory_title,
+        "detailed_content": detailed_content,
+        "theoryID": theory_id,
+        "professionID": profession_id
+    })
+
+    return jsonify({"message": "Detailed content created successfully", "detailed_content": detailed_content}), 200
+
 
 
 @app.route("/topic_completed/<topic_id>/<user_id>", methods=["POST"])
@@ -1394,7 +1515,7 @@ def delete_all_test_results():
 def get_theory(theory_id):
     try:
         # Fetch theory data from your database based on the provided theory_id
-        theory_ref = db.collection('CourseTopicsTheory').where("CourseTopicID", "==", theory_id).limit(1)
+        theory_ref = db.collection('CourseTopicsTheory').where("TopicID", "==", theory_id).limit(1)
         theory_doc = theory_ref.get()
 
         if not theory_doc:
@@ -1479,4 +1600,4 @@ def submit_answer(task_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(port=5000)
